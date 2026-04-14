@@ -704,29 +704,45 @@ class Projet1Dashboard:
         
         if self.real_data is None:
             # Fallback to mock alerts
-            for i in range(5):
-                alerts.append({
-                    'transaction_id': f'TX{random.randint(100000, 999999)}',
-                    'type': random.choice(['TRANSFER', 'CASH_OUT']),
-                    'amount': round(random.uniform(150000, 300000), 2),
-                    'fraud_probability': round(random.uniform(0.8, 0.99), 2),
-                    'timestamp': datetime.now().isoformat()
-                })
             return alerts
         
-        # Get real fraud transactions from data
-        fraud_transactions = self.real_data[self.real_data['isFraud'] == 1].head(10)
+        # Sample transactions and run ML predictions
+        sample_transactions = self.real_data.sample(n=min(50, len(self.real_data)))
         
-        for _, row in fraud_transactions.iterrows():
-            alerts.append({
-                'transaction_id': row['nameOrig'],
+        for _, row in sample_transactions.iterrows():
+            # Create transaction dict for ML prediction
+            transaction = {
+                'step': int(row['step']),
                 'type': row['type'],
                 'amount': float(row['amount']),
-                'fraud_probability': 0.95,  # Real fraud probability would need ML model
-                'timestamp': datetime.now().isoformat()
-            })
+                'oldbalanceOrg': float(row['oldbalanceOrg']),
+                'newbalanceOrig': float(row['newbalanceOrig']),
+                'nameOrig': row['nameOrig'],
+                'nameDest': row['nameDest'],
+                'oldbalanceDest': float(row['oldbalanceDest']),
+                'newbalanceDest': float(row['newbalanceDest'])
+            }
+            
+            # Get ML prediction
+            prediction = self.predict_with_ml(transaction)
+            
+            # Only add alerts for high-risk transactions
+            if prediction['is_fraud'] and prediction['fraud_probability'] > 0.7:
+                alert = {
+                    'transaction_id': row['nameOrig'],
+                    'type': row['type'],
+                    'amount': float(row['amount']),
+                    'fraud_probability': prediction['fraud_probability'],
+                    'risk_level': prediction['risk_level'],
+                    'model_used': prediction.get('model_used', 'unknown'),
+                    'original_label': int(row['isFraud']),
+                    'timestamp': datetime.now().isoformat()
+                }
+                alerts.append(alert)
         
-        return alerts
+        # Sort by fraud probability and return top 10
+        alerts.sort(key=lambda x: x['fraud_probability'], reverse=True)
+        return alerts[:10]
     
     def validate_metrics(self) -> Dict:
         """Validate metrics against Projet 1 targets"""
@@ -1210,12 +1226,15 @@ DASHBOARD_HTML = """
                     data.alerts.forEach(alert => {
                         const alertHtml = `
                             <div class="alert-item">
-                                <div class="alert-header">🔴 HIGH RISK ALERT</div>
+                                <div class="alert-header">🔴 HIGH RISK ALERT (ML)</div>
                                 <div class="alert-details">
                                     <strong>Transaction ID:</strong> ${alert.transaction_id}<br>
                                     <strong>Type:</strong> ${alert.type}<br>
                                     <strong>Amount:</strong> $${alert.amount.toLocaleString()}<br>
-                                    <strong>Fraud Probability:</strong> ${(alert.fraud_probability * 100).toFixed(0)}%<br>
+                                    <strong>Fraud Probability:</strong> ${(alert.fraud_probability * 100).toFixed(1)}%<br>
+                                    <strong>Risk Level:</strong> ${alert.risk_level || 'HIGH'}<br>
+                                    <strong>Model:</strong> ${alert.model_used || 'unknown'}<br>
+                                    <strong>Original Label:</strong> ${alert.original_label ? 'FRAUD' : 'LEGIT'}<br>
                                     <strong>Timestamp:</strong> ${new Date(alert.timestamp).toLocaleString()}
                                 </div>
                             </div>
@@ -1374,6 +1393,11 @@ DASHBOARD_HTML = """
                 }
                 
                 data.transactions.forEach(tx => {
+                    const isFraud = tx.ml_is_fraud || tx.isFraud;
+                    const fraudProb = tx.ml_fraud_probability || 0;
+                    const riskLevel = tx.ml_risk_level || 'LOW';
+                    const modelUsed = tx.ml_model_used || 'unknown';
+                    
                     const txHtml = `
                         <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 15px; margin: 10px 0;">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -1383,10 +1407,16 @@ DASHBOARD_HTML = """
                                 </div>
                                 <div>
                                     <span style="color: white;">$${tx.amount.toLocaleString()}</span>
-                                    <span style="margin-left: 15px; padding: 3px 10px; border-radius: 5px; background: ${tx.isFraud ? '#ff6b6b' : '#6bcb77'}; color: white;">
-                                        ${tx.isFraud ? 'FRAUD' : 'LEGIT'}
+                                    <span style="margin-left: 15px; padding: 3px 10px; border-radius: 5px; background: ${isFraud ? '#ff6b6b' : '#6bcb77'}; color: white;">
+                                        ${isFraud ? 'FRADE' : 'LEGIT'} (ML)
+                                    </span>
+                                    <span style="margin-left: 10px; font-size: 0.8rem; color: #a0a0a0;">
+                                        ${(fraudProb * 100).toFixed(1)}% | ${riskLevel}
                                     </span>
                                 </div>
+                            </div>
+                            <div style="margin-top: 10px; font-size: 0.85rem; color: #888;">
+                                Model: ${modelUsed} | Original Label: ${tx.isFraud ? 'FRAUD' : 'LEGIT'}
                             </div>
                         </div>
                     `;
@@ -1557,7 +1587,7 @@ def flag_transaction():
 
 @app.route('/api/search_transactions', methods=['POST'])
 def search_transactions():
-    """Search transactions"""
+    """Search transactions with ML predictions"""
     data = request.json
     if dashboard.real_data is None:
         return jsonify({'transactions': []})
@@ -1574,11 +1604,31 @@ def search_transactions():
     
     transactions = []
     for _, row in results.iterrows():
+        # Create transaction dict for ML prediction
+        transaction = {
+            'step': int(row['step']),
+            'type': row['type'],
+            'amount': float(row['amount']),
+            'oldbalanceOrg': float(row['oldbalanceOrg']),
+            'newbalanceOrig': float(row['newbalanceOrig']),
+            'nameOrig': row['nameOrig'],
+            'nameDest': row['nameDest'],
+            'oldbalanceDest': float(row['oldbalanceDest']),
+            'newbalanceDest': float(row['newbalanceDest'])
+        }
+        
+        # Get ML prediction
+        prediction = dashboard.predict_with_ml(transaction)
+        
         transactions.append({
             'transaction_id': row['nameOrig'],
             'type': row['type'],
             'amount': float(row['amount']),
-            'isFraud': int(row['isFraud']),
+            'isFraud': int(row['isFraud']),  # Original label
+            'ml_is_fraud': prediction['is_fraud'],  # ML prediction
+            'ml_fraud_probability': prediction['fraud_probability'],
+            'ml_risk_level': prediction['risk_level'],
+            'ml_model_used': prediction.get('model_used', 'unknown'),
             'timestamp': datetime.now().isoformat()
         })
     
