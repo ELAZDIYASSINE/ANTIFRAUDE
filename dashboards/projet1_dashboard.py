@@ -152,34 +152,59 @@ class FalsePositiveReductionSystem:
     def _adjust_probability(self, transaction: Dict, ml_prob: float, customer_data: Dict) -> float:
         """Adjust ML probability based on customer history"""
         adjusted_prob = ml_prob
-        
-        # Factor 1: Customer trust (more transactions + low fraud = higher trust)
-        transaction_count = customer_data.get('transaction_count', 0)
-        fraud_count = customer_data.get('fraud_count', 0)
-        
-        if transaction_count > 10 and fraud_count == 0:
-            # Trusted customer - reduce fraud probability
-            adjusted_prob *= 0.7
-        elif transaction_count > 5 and fraud_count / transaction_count < 0.1:
-            # Good customer - slightly reduce
-            adjusted_prob *= 0.85
-        elif fraud_count / max(1, transaction_count) > 0.5:
-            # High fraud customer - increase
-            adjusted_prob *= 1.3
-        
-        # Factor 2: Amount deviation from customer's average
-        avg_amount = customer_data.get('avg_amount', 0)
-        std_amount = customer_data.get('std_amount', 1)
         amount = transaction.get('amount', 0)
         
-        if avg_amount > 0:
-            z_score = abs(amount - avg_amount) / max(std_amount, 1)
-            if z_score < 2:
-                # Normal amount for this customer - reduce probability
+        # IMPORTANT: Don't reduce probability for very high amounts
+        # These are inherently suspicious regardless of customer history
+        if amount > 200000:
+            # For very high amounts, keep high probability
+            # Only minimal adjustment for extremely trusted customers
+            transaction_count = customer_data.get('transaction_count', 0)
+            fraud_count = customer_data.get('fraud_count', 0)
+            
+            if transaction_count > 50 and fraud_count == 0:
+                # Only reduce slightly for extremely trusted customers
+                adjusted_prob *= 0.9
+            # Otherwise, keep probability high
+        elif amount > 100000:
+            # For high amounts, reduce probability less aggressively
+            transaction_count = customer_data.get('transaction_count', 0)
+            fraud_count = customer_data.get('fraud_count', 0)
+            
+            if transaction_count > 20 and fraud_count == 0:
                 adjusted_prob *= 0.8
-            elif z_score > 3:
-                # Unusual amount - increase probability
+            elif transaction_count > 10 and fraud_count == 0:
+                adjusted_prob *= 0.85
+            elif fraud_count / max(1, transaction_count) > 0.5:
                 adjusted_prob *= 1.2
+        else:
+            # For normal amounts, apply standard FP reduction
+            # Factor 1: Customer trust (more transactions + low fraud = higher trust)
+            transaction_count = customer_data.get('transaction_count', 0)
+            fraud_count = customer_data.get('fraud_count', 0)
+            
+            if transaction_count > 10 and fraud_count == 0:
+                # Trusted customer - reduce fraud probability
+                adjusted_prob *= 0.7
+            elif transaction_count > 5 and fraud_count / transaction_count < 0.1:
+                # Good customer - slightly reduce
+                adjusted_prob *= 0.85
+            elif fraud_count / max(1, transaction_count) > 0.5:
+                # High fraud customer - increase
+                adjusted_prob *= 1.3
+            
+            # Factor 2: Amount deviation from customer's average
+            avg_amount = customer_data.get('avg_amount', 0)
+            std_amount = customer_data.get('std_amount', 1)
+            
+            if avg_amount > 0:
+                z_score = abs(amount - avg_amount) / max(std_amount, 1)
+                if z_score < 2:
+                    # Normal amount for this customer - reduce probability
+                    adjusted_prob *= 0.8
+                elif z_score > 3:
+                    # Unusual amount - increase probability
+                    adjusted_prob *= 1.2
         
         # Ensure probability stays in valid range
         adjusted_prob = max(0.01, min(0.99, adjusted_prob))
