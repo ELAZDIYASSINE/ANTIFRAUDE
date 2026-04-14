@@ -38,9 +38,6 @@ def load_and_analyze_paysim_dataset():
     print("\n=== FIRST 10 ROWS ===")
     df.show(10, truncate=False)
     
-    # Compute basic statistics
-    print("\n=== BASIC STATISTICS ===")
-    df.describe().show(truncate=False)
     
     # Fraud analysis
     print("\n=== FRAUD ANALYSIS ===")
