@@ -77,25 +77,36 @@ class FalsePositiveReductionSystem:
         print(f"   Target FP Rate: {self.target_fp_rate * 100:.1f}% (30% reduction)")
     
     def _initialize_customer_history(self):
-        """Initialize customer history from data"""
+        """Initialize customer history from data using optimized approach"""
         if self.data is None:
             return
         
         try:
-            # Sample customers from data to build history
-            sample_customers = self.data['nameOrig'].unique()[:1000]
+            # Use groupby for efficient aggregation
+            customer_stats = self.data.groupby('nameOrig').agg({
+                'step': 'max',
+                'amount': ['count', 'mean', 'std'],
+                'isFraud': 'sum'
+            }).head(1000)
             
-            for customer in sample_customers:
-                customer_data = self.data[self.data['nameOrig'] == customer]
+            # Flatten column names
+            customer_stats.columns = ['last_transaction', 'transaction_count', 'avg_amount', 'std_amount', 'fraud_count']
+            
+            # Convert to dictionary
+            for customer, row in customer_stats.iterrows():
                 self.customer_history[customer] = {
-                    'transaction_count': len(customer_data),
-                    'fraud_count': customer_data['isFraud'].sum(),
-                    'avg_amount': customer_data['amount'].mean(),
-                    'std_amount': customer_data['amount'].std(),
-                    'last_transaction': customer_data['step'].max()
+                    'transaction_count': int(row['transaction_count']),
+                    'fraud_count': int(row['fraud_count']),
+                    'avg_amount': float(row['avg_amount']),
+                    'std_amount': float(row['std_amount']) if not pd.isna(row['std_amount']) else 0,
+                    'last_transaction': int(row['last_transaction'])
                 }
+            
+            print(f"✅ Initialized customer history for {len(self.customer_history)} customers")
         except Exception as e:
             print(f"⚠️ Error initializing customer history: {e}")
+            import traceback
+            traceback.print_exc()
     
     def predict_with_fp_reduction(self, transaction: Dict, ml_prediction: float) -> Dict:
         """Predict fraud with false positive reduction"""
