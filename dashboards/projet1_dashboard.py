@@ -74,79 +74,50 @@ class Projet1Dashboard:
         """Load trained ML models for real predictions"""
         models = {}
         
+        # Try to load scikit-learn models (without PySpark)
         try:
-            # Try to load PySpark models
-            from pyspark.ml import PipelineModel
-            from pyspark.sql import SparkSession
-            
-            spark = SparkSession.builder \
-                .appName("DashboardML") \
-                .config("spark.sql.adaptive.enabled", "true") \
-                .getOrCreate()
-            
-            # Try to load trained model
-            model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
-                                      'models', 'fraud_detection_rf')
-            
-            if os.path.exists(model_path):
-                try:
-                    models['spark_model'] = PipelineModel.load(model_path)
-                    models['spark_session'] = spark
-                    print("✅ Loaded PySpark ML model")
-                except Exception as e:
-                    print(f"⚠️ Could not load PySpark model: {e}")
-            else:
-                print("⚠️ No trained model found, will use scikit-learn models")
-            
-            spark.stop()
-            
-        except Exception as e:
-            print(f"⚠️ PySpark not available: {e}")
-        
-        # Try to load scikit-learn models
-        try:
-            import joblib
-            import pickle
             from sklearn.ensemble import RandomForestClassifier
+            from sklearn.model_selection import train_test_split
             
             # Create a simple sklearn model for demonstration
             if self.real_data is not None:
-                # Train a simple sklearn model on the data
-                from sklearn.model_selection import train_test_split
-                from sklearn.preprocessing import StandardScaler
-                
                 # Prepare features
                 feature_cols = ['amount', 'oldbalanceOrg', 'newbalanceOrig', 
                               'oldbalanceDest', 'newbalanceDest']
                 
-                # Create dummy features
+                # Create features
                 X = self.real_data[feature_cols].fillna(0).values
                 y = self.real_data['isFraud'].values
                 
+                # Sample data for faster training
+                sample_size = min(100000, len(X))
+                indices = np.random.choice(len(X), sample_size, replace=False)
+                X_sample = X[indices]
+                y_sample = y[indices]
+                
                 # Train a simple model
                 X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.2, random_state=42, stratify=y
+                    X_sample, y_sample, test_size=0.2, random_state=42, stratify=y_sample
                 )
-                
-                scaler = StandardScaler()
-                X_train_scaled = scaler.fit_transform(X_train)
                 
                 rf_model = RandomForestClassifier(
-                    n_estimators=100, 
-                    max_depth=10,
+                    n_estimators=50, 
+                    max_depth=8,
                     random_state=42,
-                    class_weight='balanced'
+                    class_weight='balanced',
+                    n_jobs=-1
                 )
-                rf_model.fit(X_train_scaled, y_train)
+                rf_model.fit(X_train, y_train)
                 
                 models['sklearn_model'] = rf_model
-                models['sklearn_scaler'] = scaler
                 models['feature_cols'] = feature_cols
                 
                 print("✅ Trained sklearn RandomForest model")
                 
         except Exception as e:
             print(f"❌ Error loading sklearn models: {e}")
+            import traceback
+            traceback.print_exc()
         
         return models
     
@@ -177,10 +148,10 @@ class Projet1Dashboard:
             try:
                 feature_cols = self.ml_models['feature_cols']
                 features = [transaction.get(col, 0) for col in feature_cols]
-                features_scaled = self.ml_models['sklearn_scaler'].transform([features])
+                features_array = np.array([features])
                 
                 model = self.ml_models['sklearn_model']
-                fraud_prob = model.predict_proba(features_scaled)[0][1]
+                fraud_prob = model.predict_proba(features_array)[0][1]
                 
                 return {
                     'fraud_probability': float(fraud_prob),
@@ -190,6 +161,8 @@ class Projet1Dashboard:
                 }
             except Exception as e:
                 print(f"Error with sklearn prediction: {e}")
+                import traceback
+                traceback.print_exc()
         
         # Fallback to rule-based
         amount = transaction.get('amount', 0)
