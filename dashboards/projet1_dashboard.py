@@ -469,7 +469,7 @@ class Projet1Dashboard:
         }
     
     def load_real_data(self):
-        """Load real data from PaySim CSV file"""
+        """Load real data from PaySim CSV file with quality validation"""
         try:
             import pandas as pd
             csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
@@ -478,6 +478,10 @@ class Projet1Dashboard:
             if os.path.exists(csv_path):
                 df = pd.read_csv(csv_path)
                 print(f"✅ Loaded real data: {len(df):,} transactions")
+                
+                # Run data quality validation
+                self.validate_data_quality(df)
+                
                 return df
             else:
                 print(f"⚠️ CSV not found at {csv_path}")
@@ -485,6 +489,82 @@ class Projet1Dashboard:
         except Exception as e:
             print(f"❌ Error loading real data: {e}")
             return None
+    
+    def validate_data_quality(self, df):
+        """Validate data quality - check for missing values, duplicates, etc."""
+        print("\n" + "=" * 60)
+        print("📊 DATA QUALITY VALIDATION")
+        print("=" * 60)
+        
+        # 1. Check for missing values
+        missing_values = df.isnull().sum()
+        total_missing = missing_values.sum()
+        total_cells = df.shape[0] * df.shape[1]
+        missing_percentage = (total_missing / total_cells * 100)
+        
+        print(f"\n✅ Missing Values Check:")
+        print(f"   Total cells: {total_cells:,}")
+        print(f"   Missing values: {total_missing:,} ({missing_percentage:.4f}%)")
+        
+        if total_missing == 0:
+            print(f"   Status: ✅ NO MISSING VALUES")
+        else:
+            print(f"   Status: ⚠️ MISSING VALUES DETECTED")
+            for col, count in missing_values[missing_values > 0].items():
+                print(f"   - {col}: {count:,} missing")
+        
+        # 2. Check for duplicates
+        duplicates = df.duplicated().sum()
+        duplicate_percentage = (duplicates / len(df) * 100)
+        
+        print(f"\n✅ Duplicate Check:")
+        print(f"   Total rows: {len(df):,}")
+        print(f"   Duplicates: {duplicates:,} ({duplicate_percentage:.4f}%)")
+        
+        if duplicates == 0:
+            print(f"   Status: ✅ NO DUPLICATES")
+        else:
+            print(f"   Status: ⚠️ DUPLICATES DETECTED")
+        
+        # 3. Check data types
+        print(f"\n✅ Data Types:")
+        for col, dtype in df.dtypes.items():
+            print(f"   - {col}: {dtype}")
+        
+        # 4. Check for negative values in numeric columns
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        print(f"\n✅ Negative Values Check:")
+        for col in numeric_cols:
+            negative_count = (df[col] < 0).sum()
+            if negative_count > 0:
+                print(f"   - {col}: {negative_count:,} negative values ⚠️")
+            else:
+                print(f"   - {col}: 0 negative values ✅")
+        
+        # 5. Basic statistics
+        print(f"\n✅ Basic Statistics:")
+        print(f"   Total transactions: {len(df):,}")
+        print(f"   Total fraud cases: {df['isFraud'].sum():,}")
+        print(f"   Fraud rate: {(df['isFraud'].sum() / len(df) * 100):.2f}%")
+        
+        # 6. Check for balance consistency
+        if 'type' in df.columns and 'amount' in df.columns and 'oldbalanceOrg' in df.columns and 'newbalanceOrig' in df.columns:
+            cash_out = df[df['type'] == 'CASH_OUT']
+            inconsistent = (cash_out['newbalanceOrig'] != (cash_out['oldbalanceOrg'] - cash_out['amount'])).sum()
+            inconsistent_percentage = (inconsistent / len(cash_out) * 100) if len(cash_out) > 0 else 0
+            
+            print(f"\n✅ Balance Consistency Check (CASH_OUT):")
+            print(f"   Total CASH_OUT: {len(cash_out):,}")
+            print(f"   Inconsistent: {inconsistent:,} ({inconsistent_percentage:.2f}%)")
+            
+            if inconsistent == 0:
+                print(f"   Status: ✅ BALANCE CONSISTENT")
+            else:
+                print(f"   Status: ⚠️ BALANCE INCONSISTENCY DETECTED")
+        
+        print("\n" + "=" * 60)
+        print("✅ DATA QUALITY VALIDATION COMPLETE")
+        print("=" * 60 + "\n")
     
     def calculate_real_metrics(self):
         """Calculate real metrics from loaded data"""
