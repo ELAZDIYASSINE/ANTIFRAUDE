@@ -423,7 +423,35 @@ class Projet1Dashboard:
     
     def predict_with_ml(self, transaction: Dict) -> Dict:
         """Predict fraud using real ML models with false positive reduction"""
-        # Get base ML prediction
+        amount = transaction.get('amount', 0)
+        
+        # For very high amounts, use rule-based detection (ML not reliable)
+        if amount > 200000:
+            return {
+                'fraud_probability': 0.85,
+                'is_fraud': True,
+                'risk_level': 'HIGH',
+                'model_used': 'rule_based_high_amount',
+                'is_false_positive': False,
+                'dynamic_threshold': 0.5,
+                'customer_trust_score': 0,
+                'base_model': 'rule_based',
+                'base_probability': 0.85
+            }
+        elif amount > 100000:
+            return {
+                'fraud_probability': 0.75,
+                'is_fraud': True,
+                'risk_level': 'HIGH',
+                'model_used': 'rule_based_high_amount',
+                'is_false_positive': False,
+                'dynamic_threshold': 0.5,
+                'customer_trust_score': 0,
+                'base_model': 'rule_based',
+                'base_probability': 0.75
+            }
+        
+        # Get base ML prediction for normal amounts
         base_prediction = self._get_base_prediction(transaction)
         
         # Apply false positive reduction system
