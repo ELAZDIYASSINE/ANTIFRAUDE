@@ -3,6 +3,7 @@ FastAPI Main Application - Anti-Fraud Detection System
 """
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 import pandas as pd
@@ -173,9 +174,21 @@ async def root():
         "endpoints": {
             "predict": "/predict",
             "health": "/health",
-            "docs": "/docs"
+            "docs": "/docs",
+            "dashboard": "/dashboard"
         }
     }
+
+# Dashboard endpoint
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard():
+    """Serve the HTML dashboard"""
+    dashboard_path = os.path.join(os.path.dirname(__file__), "dashboard.html")
+    try:
+        with open(dashboard_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>Dashboard not found</h1><p>Please ensure dashboard.html exists in src/api/</p>"
 
 # Health check endpoint
 @app.get("/health", response_model=HealthResponse)

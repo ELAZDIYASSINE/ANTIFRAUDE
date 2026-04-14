@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anti-Fraud Detection Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            color: #1f77b4;
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 25px;
+            border-radius: 15px;
+            color: white;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .metric-card h3 {
+            font-size: 1em;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+        
+        .metric-card .value {
+            font-size: 2.5em;
+            font-weight: bold;
+        }
+        
+        .charts {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .chart-container {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .chart-container h3 {
+            color: #333;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .prediction-form {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .prediction-form h2 {
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 600;
+        }
+        
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .predict-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .predict-btn:hover {
+            transform: scale(1.02);
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+        
+        .result.high-risk {
+            background: #ff6b6b;
+            color: white;
+        }
+        
+        .result.medium-risk {
+            background: #ffd93d;
+            color: black;
+        }
+        
+        .result.low-risk {
+            background: #6bcb77;
+            color: white;
+        }
+        
+        .alert-box {
+            padding: 20px;
+            border-radius: 10px;
+            margin: 10px 0;
+            display: none;
+        }
+        
+        .alert-box.show {
+            display: block;
+        }
+        
+        .alert-box.high-risk {
+            background: #ff6b6b;
+            color: white;
+            border-left: 5px solid #c0392b;
+        }
+        
+        .alert-box.medium-risk {
+            background: #ffd93d;
+            color: black;
+            border-left: 5px solid #f39c12;
+        }
+        
+        .alert-box.low-risk {
+            background: #6bcb77;
+            color: white;
+            border-left: 5px solid #27ae60;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Anti-Fraud Detection Dashboard</h1>
+        
+        <!-- Metrics -->
+        <div class="metrics">
+            <div class="metric-card">
+                <h3>Total Transactions</h3>
+                <div class="value" id="total-transactions">6,362,620</div>
+            </div>
+            <div class="metric-card">
+                <h3>Fraud Rate</h3>
+                <div class="value" id="fraud-rate">0.13%</div>
+            </div>
+            <div class="metric-card">
+                <h3>High Risk</h3>
+                <div class="value" id="high-risk">1,245</div>
+            </div>
+            <div class="metric-card">
+                <h3>API Response Time</h3>
+                <div class="value" id="api-response">45ms</div>
+            </div>
+        </div>
+        
+        <!-- Charts -->
+        <div class="charts">
+            <div class="chart-container">
+                <h3>Transaction Types</h3>
+                <canvas id="typeChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3>Fraud Probability Distribution</h3>
+                <canvas id="probabilityChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Prediction Form -->
+        <div class="prediction-form">
+            <h2>🎯 Predict Transaction</h2>
+            <form id="predictionForm">
+                <div class="form-group">
+                    <label>Transaction Type</label>
+                    <select id="type" required>
+                        <option value="TRANSFER">TRANSFER</option>
+                        <option value="CASH_OUT">CASH_OUT</option>
+                        <option value="CASH_IN">CASH_IN</option>
+                        <option value="PAYMENT">PAYMENT</option>
+                        <option value="DEBIT">DEBIT</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Amount ($)</label>
+                    <input type="number" id="amount" value="150000" required>
+                </div>
+                <div class="form-group">
+                    <label>Old Balance Origin ($)</label>
+                    <input type="number" id="oldbalanceOrg" value="200000" required>
+                </div>
+                <div class="form-group">
+                    <label>New Balance Origin ($)</label>
+                    <input type="number" id="newbalanceOrig" value="50000" required>
+                </div>
+                <div class="form-group">
+                    <label>Old Balance Destination ($)</label>
+                    <input type="number" id="oldbalanceDest" value="0" required>
+                </div>
+                <div class="form-group">
+                    <label>New Balance Destination ($)</label>
+                    <input type="number" id="newbalanceDest" value="150000" required>
+                </div>
+                <div class="form-group">
+                    <label>Origin Account</label>
+                    <input type="text" id="nameOrig" value="C123" required>
+                </div>
+                <div class="form-group">
+                    <label>Destination Account</label>
+                    <input type="text" id="nameDest" value="C456" required>
+                </div>
+                <button type="submit" class="predict-btn">🔍 Predict Fraud</button>
+            </form>
+            
+            <div id="result" class="result"></div>
+        </div>
+        
+        <!-- Recent Alerts -->
+        <div id="alerts"></div>
+    </div>
+    
+    <script>
+        // Initialize Charts
+        const typeCtx = document.getElementById('typeChart').getContext('2d');
+        new Chart(typeCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['CASH_OUT', 'PAYMENT', 'CASH_IN', 'TRANSFER', 'DEBIT'],
+                datasets: [{
+                    data: [2237500, 2151495, 1399284, 532909, 41432],
+                    backgroundColor: ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7']
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
+            }
+        });
+        
+        const probCtx = document.getElementById('probabilityChart').getContext('2d');
+        new Chart(probCtx, {
+            type: 'bar',
+            data: {
+                labels: ['0-0.2', '0.2-0.4', '0.4-0.6', '0.6-0.8', '0.8-1.0'],
+                datasets: [{
+                    label: 'Transactions',
+                    data: [5000000, 1000000, 300000, 50000, 20000],
+                    backgroundColor: ['#6bcb77', '#6bcb77', '#ffd93d', '#ffd93d', '#ff6b6b']
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+        
+        // Prediction Form Handler
+        document.getElementById('predictionForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const transaction = {
+                step: 1,
+                type: document.getElementById('type').value,
+                amount: parseFloat(document.getElementById('amount').value),
+                oldbalanceOrg: parseFloat(document.getElementById('oldbalanceOrg').value),
+                newbalanceOrig: parseFloat(document.getElementById('newbalanceOrig').value),
+                oldbalanceDest: parseFloat(document.getElementById('oldbalanceDest').value),
+                newbalanceDest: parseFloat(document.getElementById('newbalanceDest').value),
+                nameOrig: document.getElementById('nameOrig').value,
+                nameDest: document.getElementById('nameDest').value
+            };
+            
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<p>⏳ Processing...</p>';
+            
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(transaction)
+                });
+                
+                const data = await response.json();
+                
+                const probability = data.fraud_probability || 0.5;
+                const isFraud = probability >= 0.5;
+                
+                if (probability >= 0.7) {
+                    resultDiv.className = 'result high-risk';
+                    resultDiv.innerHTML = `
+                        <h2>🔴 HIGH RISK</h2>
+                        <p>Fraud Probability: ${(probability * 100).toFixed(2)}%</p>
+                        <p>Prediction: FRAUD DETECTED</p>
+                    `;
+                } else if (probability >= 0.4) {
+                    resultDiv.className = 'result medium-risk';
+                    resultDiv.innerHTML = `
+                        <h2>⚠️ MEDIUM RISK</h2>
+                        <p>Fraud Probability: ${(probability * 100).toFixed(2)}%</p>
+                        <p>Prediction: REQUIRES REVIEW</p>
+                    `;
+                } else {
+                    resultDiv.className = 'result low-risk';
+                    resultDiv.innerHTML = `
+                        <h2>✅ LOW RISK</h2>
+                        <p>Fraud Probability: ${(probability * 100).toFixed(2)}%</p>
+                        <p>Prediction: LEGITIMATE</p>
+                    `;
+                }
+                
+            } catch (error) {
+                resultDiv.className = 'result';
+                resultDiv.style.background = '#ff6b6b';
+                resultDiv.style.color = 'white';
+                resultDiv.innerHTML = `<p>Error: ${error.message}</p>`;
+            }
+        });
+        
+        // Simulated alerts
+        const alerts = [
+            { type: 'TRANSFER', amount: 150000, prob: 0.95 },
+            { type: 'CASH_OUT', amount: 200000, prob: 0.88 },
+            { type: 'TRANSFER', amount: 180000, prob: 0.82 }
+        ];
+        
+        const alertsDiv = document.getElementById('alerts');
+        alerts.forEach(alert => {
+            const alertBox = document.createElement('div');
+            alertBox.className = 'alert-box high-risk show';
+            alertBox.innerHTML = `
+                <strong>🔴 HIGH RISK ALERT</strong><br>
+                Type: ${alert.type}<br>
+                Amount: $${alert.amount.toLocaleString()}<br>
+                Fraud Probability: ${(alert.prob * 100).toFixed(0)}%
+            `;
+            alertsDiv.appendChild(alertBox);
+        });
+    </script>
+</body>
+</html>

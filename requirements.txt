@@ -13,3 +13,7 @@ seaborn==0.12.2
 jupyter==1.0.0
 notebook==6.5.4
 delta-spark
+locust==2.15.0
+prometheus-client==0.19.0
+grafana-api==1.0.3
+kafka-python==2.0.2
