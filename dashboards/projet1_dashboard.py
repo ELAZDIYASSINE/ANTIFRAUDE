@@ -494,7 +494,7 @@ class Projet1Dashboard:
         }
     
     def load_real_data(self):
-        """Load real data from PaySim CSV file with quality validation"""
+        """Load real data from PaySim CSV file without quality validation (for speed)"""
         try:
             import pandas as pd
             csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
@@ -503,9 +503,10 @@ class Projet1Dashboard:
             if os.path.exists(csv_path):
                 df = pd.read_csv(csv_path)
                 print(f"✅ Loaded real data: {len(df):,} transactions")
+                print(f"⚡ Data quality validation disabled for faster startup")
                 
-                # Run data quality validation
-                self.validate_data_quality(df)
+                # Skip data quality validation for speed
+                # self.validate_data_quality(df)
                 
                 return df
             else:
