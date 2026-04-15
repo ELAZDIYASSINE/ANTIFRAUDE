@@ -30,6 +30,17 @@ if PROMETHEUS_AVAILABLE:
     fp_reduction_counter = Counter('fp_reductions_total', 'Total number of false positive reductions')
     system_health = Gauge('system_health', 'System health status', ['component'])
 
+# Machine Learning (XGBoost for fraud detection)
+try:
+    from xgboost import XGBClassifier
+    from sklearn.preprocessing import StandardScaler, LabelEncoder
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import classification_report, confusion_matrix
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
+    print("XGBoost not available. Install with: pip install xgboost")
+
 # Flask for web server
 try:
     from flask import Flask, render_template_string, jsonify, request, Response
@@ -385,52 +396,75 @@ class Projet1Dashboard:
         # Calculate real metrics from data
         self.current_metrics = self.calculate_real_metrics()
     
+    def train_xgboost_models(self):
+        """Train XGBoost model on real data"""
+        if not XGBOOST_AVAILABLE or self.real_data is None:
+            print("❌ XGBoost or data not available")
+            return None
+        
+        try:
+            print("🤖 Training XGBoost model...")
+            
+            # Sample data for training (balance classes)
+            fraud_df = self.real_data[self.real_data['isFraud'] == 1].sample(n=min(5000, len(self.real_data[self.real_data['isFraud'] == 1])), random_state=42)
+            legit_df = self.real_data[self.real_data['isFraud'] == 0].sample(n=50000, random_state=42)
+            train_df = pd.concat([fraud_df, legit_df])
+            
+            # Features for training
+            feature_cols = ['amount', 'oldbalanceOrg', 'newbalanceOrig', 'oldbalanceDest', 'newbalanceDest']
+            
+            # Encode transaction type
+            le = LabelEncoder()
+            train_df['type_encoded'] = le.fit_transform(train_df['type'])
+            feature_cols.append('type_encoded')
+            
+            X = train_df[feature_cols]
+            y = train_df['isFraud']
+            
+            # Train XGBoost model
+            model = XGBClassifier(
+                n_estimators=100,
+                max_depth=8,
+                learning_rate=0.1,
+                random_state=42,
+                scale_pos_weight=10,  # Handle class imbalance
+                use_label_encoder=False,
+                eval_metric='logloss'
+            )
+            model.fit(X, y)
+            
+            models = {
+                'model': model,
+                'label_encoder': le,
+                'feature_cols': feature_cols
+            }
+            
+            print("✅ Trained XGBoost model")
+            return models
+            
+        except Exception as e:
+            print(f"❌ Error training XGBoost models: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        return None
+    
     def load_ml_models(self):
         """Load trained ML models for real predictions"""
         models = {}
         
-        # Try to load scikit-learn models (without PySpark)
+        # Train XGBoost model
         try:
-            from sklearn.ensemble import RandomForestClassifier
-            from sklearn.model_selection import train_test_split
-            
-            # Create a simple sklearn model for demonstration
-            if self.real_data is not None:
-                # Prepare features
-                feature_cols = ['amount', 'oldbalanceOrg', 'newbalanceOrig', 
-                              'oldbalanceDest', 'newbalanceDest']
+            xgboost_models = self.train_xgboost_models()
+            if xgboost_models:
+                models['model'] = xgboost_models['model']
+                models['label_encoder'] = xgboost_models['label_encoder']
+                models['feature_cols'] = xgboost_models['feature_cols']
                 
-                # Create features
-                X = self.real_data[feature_cols].fillna(0).values
-                y = self.real_data['isFraud'].values
-                
-                # Sample data for faster training
-                sample_size = min(100000, len(X))
-                indices = np.random.choice(len(X), sample_size, replace=False)
-                X_sample = X[indices]
-                y_sample = y[indices]
-                
-                # Train a simple model
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X_sample, y_sample, test_size=0.2, random_state=42, stratify=y_sample
-                )
-                
-                rf_model = RandomForestClassifier(
-                    n_estimators=50, 
-                    max_depth=8,
-                    random_state=42,
-                    class_weight='balanced',
-                    n_jobs=-1
-                )
-                rf_model.fit(X_train, y_train)
-                
-                models['sklearn_model'] = rf_model
-                models['feature_cols'] = feature_cols
-                
-                print("✅ Trained sklearn RandomForest model")
+                print("✅ Trained XGBoost model")
                 
         except Exception as e:
-            print(f"❌ Error loading sklearn models: {e}")
+            print(f"❌ Error loading XGBoost models: {e}")
             import traceback
             traceback.print_exc()
         
@@ -438,35 +472,7 @@ class Projet1Dashboard:
     
     def predict_with_ml(self, transaction: Dict) -> Dict:
         """Predict fraud using real ML models with false positive reduction"""
-        amount = transaction.get('amount', 0)
-        
-        # For very high amounts, use rule-based detection (ML not reliable)
-        if amount > 200000:
-            return {
-                'fraud_probability': 0.85,
-                'is_fraud': True,
-                'risk_level': 'HIGH',
-                'model_used': 'rule_based_high_amount',
-                'is_false_positive': False,
-                'dynamic_threshold': 0.5,
-                'customer_trust_score': 0,
-                'base_model': 'rule_based',
-                'base_probability': 0.85
-            }
-        elif amount > 100000:
-            return {
-                'fraud_probability': 0.75,
-                'is_fraud': True,
-                'risk_level': 'HIGH',
-                'model_used': 'rule_based_high_amount',
-                'is_false_positive': False,
-                'dynamic_threshold': 0.5,
-                'customer_trust_score': 0,
-                'base_model': 'rule_based',
-                'base_probability': 0.75
-            }
-        
-        # Get base ML prediction for normal amounts
+        # Get base ML prediction
         base_prediction = self._get_base_prediction(transaction)
         
         # Apply false positive reduction system
@@ -504,37 +510,46 @@ class Projet1Dashboard:
                 'model_used': 'rule_based'
             }
         
-        # Try sklearn model
-        if 'sklearn_model' in self.ml_models:
-            try:
-                feature_cols = self.ml_models['feature_cols']
-                features = [transaction.get(col, 0) for col in feature_cols]
-                features_array = np.array([features])
-                
-                model = self.ml_models['sklearn_model']
-                fraud_prob = model.predict_proba(features_array)[0][1]
-                
-                return {
-                    'fraud_probability': float(fraud_prob),
-                    'is_fraud': fraud_prob > 0.5,
-                    'risk_level': 'HIGH' if fraud_prob > 0.7 else 'MEDIUM' if fraud_prob > 0.3 else 'LOW',
-                    'model_used': 'sklearn_random_forest'
-                }
-            except Exception as e:
-                print(f"Error with sklearn prediction: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        # Fallback to rule-based
-        amount = transaction.get('amount', 0)
-        fraud_prob = 0.8 if amount > 100000 else 0.1
-        
-        return {
-            'fraud_probability': fraud_prob,
-            'is_fraud': fraud_prob > 0.5,
-            'risk_level': 'HIGH' if fraud_prob > 0.7 else 'LOW',
-            'model_used': 'rule_based'
-        }
+        # Try XGBoost model
+        try:
+            feature_cols = self.ml_models['feature_cols']
+            le = self.ml_models['label_encoder']
+            model = self.ml_models['model']
+            
+            # Encode transaction type
+            transaction_type = transaction.get('type', 'TRANSFER')
+            type_encoded = le.transform([transaction_type])[0]
+            
+            # Prepare features
+            features = [
+                transaction.get('amount', 0),
+                transaction.get('oldbalanceOrg', 0),
+                transaction.get('newbalanceOrig', 0),
+                transaction.get('oldbalanceDest', 0),
+                transaction.get('newbalanceDest', 0),
+                type_encoded
+            ]
+            
+            features_array = np.array([features])
+            
+            # Get prediction
+            fraud_prob = model.predict_proba(features_array)[0][1]
+            
+            return {
+                'fraud_probability': float(fraud_prob),
+                'is_fraud': fraud_prob > 0.5,
+                'risk_level': 'HIGH' if fraud_prob > 0.7 else 'MEDIUM' if fraud_prob > 0.3 else 'LOW',
+                'model_used': 'xgboost'
+            }
+        except Exception as e:
+            print(f"❌ Error using XGBoost model: {e}")
+            # Fallback to rule-based
+            return {
+                'fraud_probability': 0.5,
+                'is_fraud': False,
+                'risk_level': 'MEDIUM',
+                'model_used': 'fallback'
+            }
     
     def load_real_data(self):
         """Load real data from PaySim CSV file without quality validation (for speed)"""
