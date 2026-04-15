@@ -1,18 +1,8 @@
 # 🏗️ Architecture Technique - Anti-Fraud Detection
 
 ## 📊 Schéma Architecture End-to-End
-
-```mermaid
-graph LR
-    A[Dataset PaySim<br/>6.3M transactions] --> B[PySpark<br/>Batch Processing]
-    B --> C[Feature Engineering<br/>Python/Pandas]
-    C --> D[XGBoost Model<br/>MLflow Tracking]
-    D --> E[FastAPI REST<br/>Port 8000]
-    E --> F[Streamlit Dashboard<br/>Port 8501]
-    
-    G[Real-time Transactions] --> H[Spark Streaming<br/>Optional]
-    H --> D
-```
+Dataset PaySim → PySpark → Features → XGBoost → FastAPI → Streamlit
+     (6.3M tx)    (1.57s)    (prepare)   (ML)     (web)    (dashboard)
 
 ## 🔧 Choix Technologiques Justifiés
 
@@ -52,8 +42,7 @@ graph LR
 ## 💻 Ressources Nécessaires
 
 | **Environnement** | **CPU** | **RAM** | **Storage** | **Coût** |
-|------------------|---------|---------|-------------|----------|
-| **Development** | 4 cores | 16 GB | 100 GB | $200/mois |
+|------------------|---------|---------|-------------|----------||
 | **Production** | 8 cores | 32 GB | 500 GB | $600/mois |
 
 ### 📈 Performance Cible

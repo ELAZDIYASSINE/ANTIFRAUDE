@@ -15,6 +15,21 @@ from datetime import datetime, timedelta
 from typing import Dict, List
 import pandas as pd
 
+try:
+    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    PROMETHEUS_AVAILABLE = False
+    print("⚠️ prometheus_client not available. Install with: pip install prometheus_client")
+
+# Prometheus metrics
+if PROMETHEUS_AVAILABLE:
+    prediction_counter = Counter('fraud_predictions_total', 'Total number of fraud predictions', ['result'])
+    prediction_latency = Histogram('fraud_prediction_latency_seconds', 'Fraud prediction latency')
+    fraud_alerts_counter = Counter('fraud_alerts_total', 'Total number of fraud alerts')
+    fp_reduction_counter = Counter('fp_reductions_total', 'Total number of false positive reductions')
+    system_health = Gauge('system_health', 'System health status', ['component'])
+
 # Flask for web server
 try:
     from flask import Flask, render_template_string, jsonify, request, Response
@@ -1590,14 +1605,36 @@ if FLASK_AVAILABLE:
             return jsonify(dashboard.fp_reduction_system.get_metrics())
         return jsonify({'error': 'FP reduction system not available'})
     
+    @app.route('/metrics')
+    def metrics():
+        """Prometheus metrics endpoint"""
+        if PROMETHEUS_AVAILABLE:
+            # Update system health
+            system_health.labels(component='ml_model').set(1 if dashboard.ml_models else 0)
+            system_health.labels(component='data_loaded').set(1 if dashboard.real_data is not None else 0)
+            system_health.labels(component='fp_reduction').set(1 if dashboard.fp_reduction_system else 0)
+            return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
+        return jsonify({'error': 'Prometheus not available'})
+    
     @app.route('/api/predict', methods=['POST'])
     def predict_transaction():
         """Predict fraud for submitted transaction using real ML models"""
         try:
             data = request.json
             
-            # Use real ML prediction from dashboard
-            prediction = dashboard.predict_with_ml(data)
+            # Track prediction latency
+            if PROMETHEUS_AVAILABLE:
+                with prediction_latency.time():
+                    prediction = dashboard.predict_with_ml(data)
+            else:
+                prediction = dashboard.predict_with_ml(data)
+            
+            # Track prediction counter
+            if PROMETHEUS_AVAILABLE:
+                result = 'fraud' if prediction['is_fraud'] else 'legit'
+                prediction_counter.labels(result=result).inc()
+            
+            # Add false positive detection
             
             # Add false positive detection
             prediction['is_false_positive'] = detect_false_positive(data, prediction)
