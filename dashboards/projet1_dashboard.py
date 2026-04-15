@@ -453,23 +453,8 @@ class Projet1Dashboard:
         """Load trained ML models for real predictions"""
         models = {}
         
-        # Train XGBoost model
-        try:
-            if hasattr(self, 'train_xgboost_models'):
-                xgboost_models = self.train_xgboost_models()
-                if xgboost_models:
-                    models['model'] = xgboost_models['model']
-                    models['label_encoder'] = xgboost_models['label_encoder']
-                    models['feature_cols'] = xgboost_models['feature_cols']
-                    
-                    print("✅ Trained XGBoost model")
-            else:
-                print("⚠️ train_xgboost_models method not found, using fallback")
-                
-        except Exception as e:
-            print(f"❌ Error loading XGBoost models: {e}")
-            import traceback
-            traceback.print_exc()
+        # Using rule-based detection instead of ML models
+        print("🔧 Using rule-based detection (no ML models loaded)")
         
         return models
     
@@ -492,67 +477,55 @@ class Projet1Dashboard:
         return base_prediction
     
     def _get_base_prediction(self, transaction: Dict) -> Dict:
-        """Get base ML prediction without FP reduction"""
-        if not self.ml_models:
-            # Fallback to simple rule-based prediction
-            amount = transaction.get('amount', 0)
-            balance_change = transaction.get('oldbalanceOrg', 0) - transaction.get('newbalanceOrig', 0)
-            
-            # Rule-based prediction
-            if amount > 200000 or (amount > 100000 and balance_change > 50000):
-                fraud_prob = 0.85
-            elif amount > 50000:
-                fraud_prob = 0.45
-            else:
-                fraud_prob = 0.05
-            
-            return {
-                'fraud_probability': fraud_prob,
-                'is_fraud': fraud_prob > 0.5,
-                'risk_level': 'HIGH' if fraud_prob > 0.7 else 'MEDIUM' if fraud_prob > 0.3 else 'LOW',
-                'model_used': 'rule_based'
-            }
+        """Get base rule-based prediction without FP reduction"""
+        # Rule-based detection according to user specifications
+        transaction_type = transaction.get('type', '')
+        amount = transaction.get('amount', 0)
+        oldbalanceOrg = transaction.get('oldbalanceOrg', 0)
+        newbalanceOrig = transaction.get('newbalanceOrig', 0)
+        oldbalanceDest = transaction.get('oldbalanceDest', 0)
+        newbalanceDest = transaction.get('newbalanceDest', 0)
         
-        # Try XGBoost model
-        try:
-            feature_cols = self.ml_models['feature_cols']
-            le = self.ml_models['label_encoder']
-            model = self.ml_models['model']
-            
-            # Encode transaction type
-            transaction_type = transaction.get('type', 'TRANSFER')
-            type_encoded = le.transform([transaction_type])[0]
-            
-            # Prepare features
-            features = [
-                transaction.get('amount', 0),
-                transaction.get('oldbalanceOrg', 0),
-                transaction.get('newbalanceOrig', 0),
-                transaction.get('oldbalanceDest', 0),
-                transaction.get('newbalanceDest', 0),
-                type_encoded
-            ]
-            
-            features_array = np.array([features])
-            
-            # Get prediction
-            fraud_prob = model.predict_proba(features_array)[0][1]
-            
-            return {
-                'fraud_probability': float(fraud_prob),
-                'is_fraud': fraud_prob > 0.5,
-                'risk_level': 'HIGH' if fraud_prob > 0.7 else 'MEDIUM' if fraud_prob > 0.3 else 'LOW',
-                'model_used': 'xgboost'
-            }
-        except Exception as e:
-            print(f"❌ Error using XGBoost model: {e}")
-            # Fallback to rule-based
-            return {
-                'fraud_probability': 0.5,
-                'is_fraud': False,
-                'risk_level': 'MEDIUM',
-                'model_used': 'fallback'
-            }
+        fraud_indicators = 0
+        fraud_prob = 0.0
+        
+        # Rule 1: Type in ('TRANSFER', 'CASH_OUT')
+        if transaction_type in ['TRANSFER', 'CASH_OUT']:
+            fraud_indicators += 1
+        
+        # Rule 2: Amount > 100000
+        if amount > 100000:
+            fraud_indicators += 1
+        
+        # Rule 3: oldbalanceOrg = 0
+        if oldbalanceOrg == 0:
+            fraud_indicators += 1
+        
+        # Rule 4: newbalanceOrig = 0 after transaction
+        if newbalanceOrig == 0:
+            fraud_indicators += 1
+        
+        # Rule 5: oldbalanceDest = 0 + newbalanceDest increases suddenly
+        if oldbalanceDest == 0 and newbalanceDest > amount * 0.9:
+            fraud_indicators += 1
+        
+        # Calculate fraud probability based on indicators
+        if fraud_indicators >= 3:
+            fraud_prob = 0.95  # High probability
+        elif fraud_indicators == 2:
+            fraud_prob = 0.70  # Medium-high probability
+        elif fraud_indicators == 1:
+            fraud_prob = 0.40  # Medium probability
+        else:
+            fraud_prob = 0.10  # Low probability
+        
+        return {
+            'fraud_probability': fraud_prob,
+            'is_fraud': fraud_prob > 0.5,
+            'risk_level': 'HIGH' if fraud_prob > 0.7 else 'MEDIUM' if fraud_prob > 0.3 else 'LOW',
+            'model_used': 'rule_based',
+            'fraud_indicators': fraud_indicators
+        }
     
     def load_real_data(self):
         """Load real data from PaySim CSV file without quality validation (for speed)"""
