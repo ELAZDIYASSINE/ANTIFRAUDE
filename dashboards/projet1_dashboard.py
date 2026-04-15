@@ -455,13 +455,16 @@ class Projet1Dashboard:
         
         # Train XGBoost model
         try:
-            xgboost_models = self.train_xgboost_models()
-            if xgboost_models:
-                models['model'] = xgboost_models['model']
-                models['label_encoder'] = xgboost_models['label_encoder']
-                models['feature_cols'] = xgboost_models['feature_cols']
-                
-                print("✅ Trained XGBoost model")
+            if hasattr(self, 'train_xgboost_models'):
+                xgboost_models = self.train_xgboost_models()
+                if xgboost_models:
+                    models['model'] = xgboost_models['model']
+                    models['label_encoder'] = xgboost_models['label_encoder']
+                    models['feature_cols'] = xgboost_models['feature_cols']
+                    
+                    print("✅ Trained XGBoost model")
+            else:
+                print("⚠️ train_xgboost_models method not found, using fallback")
                 
         except Exception as e:
             print(f"❌ Error loading XGBoost models: {e}")
